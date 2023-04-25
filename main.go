@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 
-	"golang.org/x/exp/slices"
-
+	"github.com/afdesk/trivy-go-plugin/command"
 	k8sReport "github.com/aquasecurity/trivy/pkg/k8s/report"
 	"github.com/aquasecurity/trivy/pkg/types"
 )
@@ -20,20 +18,25 @@ var (
 )
 
 func main() {
-	if slices.Contains(os.Args, "-h") || slices.Contains(os.Args, "--help") {
+	if command.IsHelp() {
 		helpMessage()
+		return
 	}
-	pluginOutput := getFlagValue("--plugin-output")
+
+	pluginArgs, trivyCmd := command.RetrievePluginArguments([]string{"--plugin-output", "--output"})
+
+	pluginOutput := pluginArgs["--plugin-output"]
 	if pluginOutput == "" {
 		log.Fatal("flag --plugin-output is required")
 	}
-	trivyOutputFileName := getFlagValue("--output")
+
+	trivyOutputFileName := pluginArgs["--output"]
 	if trivyOutputFileName == "" {
 		trivyOutputFileName = filepath.Join(os.TempDir(), tempJsonFileName)
 		defer removeFile(trivyOutputFileName)
 	}
 
-	if err := makeTrivyJsonReport(trivyOutputFileName); err != nil {
+	if err := command.MakeTrivyJsonReport(trivyCmd, trivyOutputFileName); err != nil {
 		log.Fatalf("failed to make trivy report: %v", err)
 	}
 	_, err := getReportFromJson(trivyOutputFileName)
@@ -47,7 +50,7 @@ func main() {
 }
 
 func getReportFromJson(jsonFileName string) (*types.Report, error) {
-	if !isK8s() {
+	if !command.IsK8s() {
 		return readJson[types.Report](jsonFileName)
 	}
 
@@ -83,13 +86,6 @@ func readJson[T any](jsonFileName string) (*T, error) {
 	return &out, nil
 }
 
-func isK8s() bool {
-	if slices.Contains(os.Args, "kubernetes") || slices.Contains(os.Args, "k8s") {
-		return true
-	}
-	return false
-}
-
 func removeFile(file string) {
 	if err := os.Remove(file); err != nil {
 		log.Fatalf("failed to remove file %v", err)
@@ -102,14 +98,6 @@ func closeFile(file *os.File) {
 	}
 }
 
-func getFlagValue(flag string) string {
-	flagIndex := slices.Index(os.Args, flag)
-	if flagIndex != -1 && (len(os.Args)-1) > flagIndex { // the flag exists and it is not the last argument
-		return os.Args[flagIndex+1]
-	}
-	return ""
-}
-
 func saveResult(filename string, result []byte) error {
 	file, err := os.Create(filename)
 	if err != nil {
@@ -120,18 +108,6 @@ func saveResult(filename string, result []byte) error {
 		return err
 	}
 	defer closeFile(file)
-	return nil
-}
-
-func makeTrivyJsonReport(outputFileName string) error {
-	trivyCommand := os.Args[1 : len(os.Args)-2]
-	cmdArgs := append(trivyCommand, "--format", "json", "--output", outputFileName)
-	cmd := exec.Command("trivy", cmdArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return err
-	}
 	return nil
 }
 
