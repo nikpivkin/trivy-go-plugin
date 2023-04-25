@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/afdesk/trivy-go-plugin/command"
 	k8sReport "github.com/aquasecurity/trivy/pkg/k8s/report"
 	"github.com/aquasecurity/trivy/pkg/types"
@@ -25,17 +23,20 @@ func main() {
 		return
 	}
 
-	pluginOutput := getFlagValue("--plugin-output")
+	pluginArgs, trivyCmd := command.RetrievePluginArguments([]string{"--plugin-output", "--output"})
+
+	pluginOutput := pluginArgs["--plugin-output"]
 	if pluginOutput == "" {
 		log.Fatal("flag --plugin-output is required")
 	}
-	trivyOutputFileName := getFlagValue("--output")
+
+	trivyOutputFileName := pluginArgs["--output"]
 	if trivyOutputFileName == "" {
 		trivyOutputFileName = filepath.Join(os.TempDir(), tempJsonFileName)
 		defer removeFile(trivyOutputFileName)
 	}
 
-	if err := command.MakeTrivyJsonReport(trivyOutputFileName); err != nil {
+	if err := command.MakeTrivyJsonReport(trivyCmd, trivyOutputFileName); err != nil {
 		log.Fatalf("failed to make trivy report: %v", err)
 	}
 	_, err := getReportFromJson(trivyOutputFileName)
@@ -95,14 +96,6 @@ func closeFile(file *os.File) {
 	if err := file.Close(); err != nil {
 		log.Fatalf("failed to remove file %v", err)
 	}
-}
-
-func getFlagValue(flag string) string {
-	flagIndex := slices.Index(os.Args, flag)
-	if flagIndex != -1 && (len(os.Args)-1) > flagIndex { // the flag exists and it is not the last argument
-		return os.Args[flagIndex+1]
-	}
-	return ""
 }
 
 func saveResult(filename string, result []byte) error {

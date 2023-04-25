@@ -42,8 +42,7 @@ func ReadPluginFile(fileName string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func MakeTrivyJsonReport(outputFileName string) error {
-	trivyCommand := os.Args[1 : len(os.Args)-1]
+func MakeTrivyJsonReport(trivyCommand []string, outputFileName string) error {
 	cmdArgs := append(trivyCommand, "--format", "json", "--output", outputFileName)
 	cmd := exec.Command("trivy", cmdArgs...)
 	cmd.Stdout = os.Stdout
