@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/afdesk/trivy-go-plugin/command"
+	"github.com/afdesk/trivy-go-plugin/pkg/common"
 	k8sReport "github.com/aquasecurity/trivy/pkg/k8s/report"
 	"github.com/aquasecurity/trivy/pkg/types"
 )
@@ -18,12 +18,12 @@ var (
 )
 
 func main() {
-	if command.IsHelp() {
+	if common.IsHelp() {
 		helpMessage()
 		return
 	}
 
-	pluginArgs, trivyCmd := command.RetrievePluginArguments([]string{"--plugin-output", "--output"})
+	pluginArgs, trivyCmd := common.RetrievePluginArguments([]string{"--plugin-output", "--output"})
 
 	pluginOutput := pluginArgs["--plugin-output"]
 	if pluginOutput == "" {
@@ -36,7 +36,7 @@ func main() {
 		defer removeFile(trivyOutputFileName)
 	}
 
-	if err := command.MakeTrivyJsonReport(trivyCmd, trivyOutputFileName); err != nil {
+	if err := common.MakeTrivyJsonReport(trivyCmd, trivyOutputFileName); err != nil {
 		log.Fatalf("failed to make trivy report: %v", err)
 	}
 	_, err := getReportFromJson(trivyOutputFileName)
@@ -50,7 +50,7 @@ func main() {
 }
 
 func getReportFromJson(jsonFileName string) (*types.Report, error) {
-	if !command.IsK8s() {
+	if !common.IsK8s() {
 		return readJson[types.Report](jsonFileName)
 	}
 
