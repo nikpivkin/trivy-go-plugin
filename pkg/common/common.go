@@ -60,7 +60,11 @@ func RetrievePluginArguments(availableArguments []string) (pluginArgs Arguments,
 	args := make(map[string]string)
 	for i := 0; i < len(os.Args); i++ {
 		if slices.Contains(availableArguments, os.Args[i]) {
-			args[os.Args[i]] = os.Args[i+1]
+			if i+1 >= len(os.Args) {
+				args[os.Args[i]] = ""
+			} else {
+				args[os.Args[i]] = os.Args[i+1]
+			}
 			i++ // skip argument value
 		} else {
 			trivyCommand = append(trivyCommand, os.Args[i])
