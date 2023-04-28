@@ -2,17 +2,22 @@ package common
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	k8sReport "github.com/aquasecurity/trivy/pkg/k8s/report"
 	"github.com/aquasecurity/trivy/pkg/types"
 
 	"golang.org/x/exp/slices"
 )
+
+var ErrorJsonUnknownField = errors.New("json: unknown field")
 
 func IsHelp() bool {
 	return slices.Contains(os.Args, "--help") || slices.Contains(os.Args, "-h")
@@ -21,40 +26,53 @@ func IsHelp() bool {
 func ReadReport(fileName string) (*types.Report, error) {
 
 	log.Println("Read report", fileName)
-	if report, err := ReadJson[k8sReport.Report](fileName); err == nil {
-		log.Println("K8s report detected")
-		return convertK8sReportToReport(report), nil
-	}
 
-	if report, err := ReadJson[types.Report](fileName); err == nil {
-		log.Println("Trivy report detected")
+	report, err := readAndParseJson[types.Report](fileName)
+	if err == nil {
 		return report, nil
 	}
 
-	return nil, fmt.Errorf("failed to read report")
+	if err != ErrorJsonUnknownField {
+		return nil, fmt.Errorf("failed to read report %v", err)
+	}
+
+	k8s, err := readAndParseJson[k8sReport.Report](fileName)
+	if err == nil {
+		return convertK8sReportToReport(k8s), nil
+	}
+
+	return nil, fmt.Errorf("failed to read report %v", err)
 }
 
-func ReadJson[T any](fileName string) (*T, error) {
-	jsonFile, err := os.Open(fileName)
+func readAndParseJson[T any](fileName string) (*T, error) {
+	f, err := os.Open(fileName)
 	if err != nil {
 		return nil, err
 	}
 
 	defer func() {
-		err := jsonFile.Close()
+		err := f.Close()
 		if err != nil {
 			log.Println("failed to close file", err)
 		}
 	}()
 
+	return parseJsonStrict[T](f)
+}
+
+func parseJsonStrict[T any](r io.Reader) (*T, error) {
 	var out T
 
-	decoder := json.NewDecoder(jsonFile)
+	decoder := json.NewDecoder(r)
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&out); err != nil {
+		if strings.HasPrefix(err.Error(), "json: unknown field") {
+			return nil, ErrorJsonUnknownField
+		}
 		return nil, err
 	}
+
 	return &out, nil
 }
 
