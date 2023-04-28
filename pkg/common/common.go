@@ -1,20 +1,93 @@
 package common
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+
+	k8sReport "github.com/aquasecurity/trivy/pkg/k8s/report"
+	"github.com/aquasecurity/trivy/pkg/types"
 
 	"golang.org/x/exp/slices"
 )
+
+var ErrorJsonUnknownField = errors.New("json: unknown field")
 
 func IsHelp() bool {
 	return slices.Contains(os.Args, "--help") || slices.Contains(os.Args, "-h")
 }
 
-func IsK8s() bool {
-	return slices.Contains(os.Args, "kubernetes") || slices.Contains(os.Args, "k8s")
+func ReadReport(fileName string) (*types.Report, error) {
+
+	log.Println("Read report", fileName)
+
+	report, err := readAndParseJson[types.Report](fileName)
+	if err == nil {
+		return report, nil
+	}
+
+	if err != ErrorJsonUnknownField {
+		return nil, fmt.Errorf("failed to read report %v", err)
+	}
+
+	k8s, err := readAndParseJson[k8sReport.Report](fileName)
+	if err == nil {
+		return convertK8sReportToReport(k8s), nil
+	}
+
+	return nil, fmt.Errorf("failed to read report %v", err)
+}
+
+func readAndParseJson[T any](fileName string) (*T, error) {
+	f, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		err := f.Close()
+		if err != nil {
+			log.Println("failed to close file", err)
+		}
+	}()
+
+	return parseJsonStrict[T](f)
+}
+
+func parseJsonStrict[T any](r io.Reader) (*T, error) {
+	var out T
+
+	decoder := json.NewDecoder(r)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&out); err != nil {
+		if strings.HasPrefix(err.Error(), "json: unknown field") {
+			return nil, ErrorJsonUnknownField
+		}
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+func convertK8sReportToReport(k8s *k8sReport.Report) *types.Report {
+	var results types.Results
+	for _, vuln := range k8s.Vulnerabilities {
+		results = append(results, vuln.Results...)
+	}
+	for _, misc := range k8s.Misconfigurations {
+		results = append(results, misc.Results...)
+	}
+
+	return &types.Report{
+		Results: results,
+	}
 }
 
 func GetPathToPluginDir(fileName string) (string, error) {

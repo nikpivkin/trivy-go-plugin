@@ -1,15 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/afdesk/trivy-go-plugin/pkg/common"
-	k8sReport "github.com/aquasecurity/trivy/pkg/k8s/report"
-	"github.com/aquasecurity/trivy/pkg/types"
 )
 
 var (
@@ -39,7 +36,7 @@ func main() {
 	if err := common.MakeTrivyJsonReport(trivyCmd, trivyOutputFileName); err != nil {
 		log.Fatalf("failed to make trivy report: %v", err)
 	}
-	_, err := getReportFromJson(trivyOutputFileName)
+	_, err := common.ReadReport(trivyOutputFileName)
 	if err != nil {
 		log.Fatalf("failed to get report from json: %v", err)
 	}
@@ -47,43 +44,6 @@ func main() {
 	if err := saveResult(pluginOutput, []byte{}); err != nil {
 		log.Fatalf("failed to save result: %v", err)
 	}
-}
-
-func getReportFromJson(jsonFileName string) (*types.Report, error) {
-	if !common.IsK8s() {
-		return readJson[types.Report](jsonFileName)
-	}
-
-	k8sParsedReport, err := readJson[k8sReport.Report](jsonFileName)
-	if err != nil {
-		return nil, err
-	}
-
-	var resultsArr types.Results
-	for _, vuln := range k8sParsedReport.Vulnerabilities {
-		resultsArr = append(resultsArr, vuln.Results...)
-	}
-	for _, misc := range k8sParsedReport.Misconfigurations {
-		resultsArr = append(resultsArr, misc.Results...)
-	}
-	return &types.Report{
-		Results: resultsArr,
-	}, nil
-}
-
-func readJson[T any](jsonFileName string) (*T, error) {
-	jsonFile, err := os.Open(jsonFileName)
-	if err != nil {
-		return nil, err
-	}
-
-	defer closeFile(jsonFile)
-
-	var out T
-	if err := json.NewDecoder(jsonFile).Decode(&out); err != nil {
-		return nil, err
-	}
-	return &out, nil
 }
 
 func removeFile(file string) {
